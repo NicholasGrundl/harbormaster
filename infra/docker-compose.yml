@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  backend:
+    image: ${ARTIFACT_REGISTRY_HOST}/${IMAGE_BACKEND}:${IMAGE_TAG:-latest}
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_data:/app/data
+
+  frontend:
+    image: ${ARTIFACT_REGISTRY_HOST}/${IMAGE_FRONTEND}:${IMAGE_TAG:-latest}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    
+  nginx:
+    image: ${ARTIFACT_REGISTRY_HOST}/${IMAGE_NGINX}:${IMAGE_TAG:-latest}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  backend_data:
