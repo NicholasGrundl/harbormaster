@@ -1,0 +1,110 @@
+# /environments/local/docker-compose.yml
+version: '3.8'
+
+services:
+  dockmaster:
+    image: ${AUTH_IMAGE}:${IMAGE_TAG:-latest}
+    build:
+      context: ${DEV_MOUNT_SOURCE:+../../../dockmaster}
+      dockerfile: Dockerfile
+      target: ${NODE_ENV:-development}
+    container_name: ${COMPOSE_PROJECT_NAME}-auth
+    volumes:
+      - ${DOCKMASTER_KEY_PATH}:/app/keys/dockmaster.key:ro
+      - ${DEV_MOUNT_SOURCE:+../../../dockmaster/src:/app/src}
+    environment:
+      - PRIVATE_KEY_PATH=/app/keys/dockmaster.key
+      - NODE_ENV=${NODE_ENV:-development}
+      - DEBUG=${DEBUG:-true}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - harbormaster
+    command: ["npm", "run", "dev"]
+
+  dockyard:
+    image: ${BACKEND_IMAGE}:${IMAGE_TAG:-latest}
+    build:
+      context: ${DEV_MOUNT_SOURCE:+../../../dockyard}
+      dockerfile: Dockerfile
+      target: ${NODE_ENV:-development}
+    container_name: ${COMPOSE_PROJECT_NAME}-backend
+    volumes:
+      - ${DOCKYARD_KEY_PATH}:/app/keys/dockyard.key:ro
+      - ${DEV_MOUNT_SOURCE:+../../../dockyard/src:/app/src}
+      - backend_data:/app/data
+    environment:
+      - PRIVATE_KEY_PATH=/app/keys/dockyard.key
+      - NODE_ENV=${NODE_ENV:-development}
+      - DEBUG=${DEBUG:-true}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - harbormaster
+    command: ["npm", "run", "dev"]
+    depends_on:
+      dockmaster:
+        condition: service_healthy
+
+  waypoint:
+    image: ${FRONTEND_IMAGE}:${IMAGE_TAG:-latest}
+    build:
+      context: ${DEV_MOUNT_SOURCE:+../../../waypoint}
+      dockerfile: Dockerfile
+      target: ${NODE_ENV:-development}
+    container_name: ${COMPOSE_PROJECT_NAME}-frontend
+    volumes:
+      - ${DEV_MOUNT_SOURCE:+../../../waypoint/src:/app/src}
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - DEBUG=${DEBUG:-true}
+      - BACKEND_URL=http://localhost/api
+      - AUTH_URL=http://localhost/auth
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - harbormaster
+    command: ["npm", "run", "dev"]
+    depends_on:
+      dockyard:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ../../nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${NGINX_CONFIG_PATH:-./nginx.conf}:/etc/nginx/conf.d/environment/local.conf:ro
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - harbormaster
+    depends_on:
+      waypoint:
+        condition: service_healthy
+      dockyard:
+        condition: service_healthy
+      dockmaster:
+        condition: service_healthy
+
+networks:
+  harbormaster:
+    name: ${COMPOSE_PROJECT_NAME}-network
+
+volumes:
+  backend_data:
+    name: ${COMPOSE_PROJECT_NAME}-backend-data
