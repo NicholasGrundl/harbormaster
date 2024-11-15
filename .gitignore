@@ -6,6 +6,12 @@
 **/.env**
 **.env
 
+.key
+.key**
+**.key**
+**/.key**
+**.key
+
 /old/
 old/
 old/
