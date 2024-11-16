@@ -4,27 +4,42 @@ version: '3.8'
 services:
   dockmaster:
     image: ${AUTH_IMAGE}:${IMAGE_TAG:-latest}
+    build:
+      context: ${DEV_MOUNT_SOURCE:+../../../dockmaster}
+      dockerfile: Dockerfile
+      target: ${NODE_ENV:-development}
     container_name: ${COMPOSE_PROJECT_NAME}-auth
     volumes:
       - ${DOCKMASTER_KEY_PATH}:/app/keys/dockmaster.key:ro
+      - ${DEV_MOUNT_SOURCE:+../../../dockmaster/src:/app/src}
     environment:
       - PRIVATE_KEY_PATH=/app/keys/dockmaster.key
+      - NODE_ENV=${NODE_ENV:-development}
+      - DEBUG=${DEBUG:-true}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/auth/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     networks:
       - harbormaster
+    command: ["npm", "run", "dev"]
 
   dockyard:
     image: ${BACKEND_IMAGE}:${IMAGE_TAG:-latest}
+    build:
+      context: ${DEV_MOUNT_SOURCE:+../../../dockyard}
+      dockerfile: Dockerfile
+      target: ${NODE_ENV:-development}
     container_name: ${COMPOSE_PROJECT_NAME}-backend
     volumes:
       - ${DOCKYARD_KEY_PATH}:/app/keys/dockyard.key:ro
+      - ${DEV_MOUNT_SOURCE:+../../../dockyard/src:/app/src}
       - backend_data:/app/data
     environment:
       - PRIVATE_KEY_PATH=/app/keys/dockyard.key
+      - NODE_ENV=${NODE_ENV:-development}
+      - DEBUG=${DEBUG:-true}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
@@ -32,16 +47,25 @@ services:
       retries: 3
     networks:
       - harbormaster
+    command: ["npm", "run", "dev"]
     depends_on:
       dockmaster:
         condition: service_healthy
 
   waypoint:
     image: ${FRONTEND_IMAGE}:${IMAGE_TAG:-latest}
+    build:
+      context: ${DEV_MOUNT_SOURCE:+../../../waypoint}
+      dockerfile: Dockerfile
+      target: ${NODE_ENV:-development}
     container_name: ${COMPOSE_PROJECT_NAME}-frontend
+    volumes:
+      - ${DEV_MOUNT_SOURCE:+../../../waypoint/src:/app/src}
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - DEBUG=${DEBUG:-true}
+      - BACKEND_URL=http://localhost/api
+      - AUTH_URL=http://localhost/auth
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s
@@ -49,6 +73,7 @@ services:
       retries: 3
     networks:
       - harbormaster
+    command: ["npm", "run", "dev"]
     depends_on:
       dockyard:
         condition: service_healthy
@@ -75,7 +100,6 @@ services:
         condition: service_healthy
       dockmaster:
         condition: service_healthy
-    command: ["nginx", "-g", "daemon off;"]
 
 networks:
   harbormaster:

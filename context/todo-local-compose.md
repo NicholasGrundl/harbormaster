@@ -1,9 +1,18 @@
 # Local Development Testing Checklist
 
 ## Action Items:
-- make a very simple docker compose that tests the prebuilt images 
-- parameterize it to the current version using an env file
+- [x] make a very simple docker compose that tests the prebuilt images 
+- [x] parameterize it to the current version using an env file
     - skip the local build variation for now
+- [ ] rebuild dockmaster image so it is correct
+    - pull changes for fastapi from windows machine and rebuild.
+    - clean up tags and remove old images. make a fresh set starting from 0.0.1
+    - check source code mounting into image or installing into image?
+- [ ] rebuild dockyard image so it is correct
+    - make it a proper package in the repo so it c an be built and installed editable
+    - clean up tags and remove old images. make a fresh set starting from 0.0.1
+    - check source code mounting into image or installing into image?
+- [ ] test the docker compsoe local setup
 
 # Steps
 
@@ -21,12 +30,12 @@
 - [x] Verify images in registry
 
 ## 3. Local prebuilt Images Test
-- [ ] dev key files
+- [x] dev key files
     - verify setup script openssl versus ssh-agent
     - create dev keys and gitignore
-- [ ] configure Env file settings
+- [x] configure Env file settings
     - make file should use env.development file?
-- [ ] Verify fresh pull from GAR
+- [x] Verify fresh pull from GAR
 - [ ] Verify compose launches images
 - [ ] Verify all services are working
     - test on local host
