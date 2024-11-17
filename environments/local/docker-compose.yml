@@ -52,13 +52,13 @@ services:
         condition: service_healthy
 
   nginx:
-    image: nginx:1.25-alpine
+    build:
+      context: ../../nginx
     container_name: ${COMPOSE_PROJECT_NAME}-nginx
     ports:
       - "${NGINX_PORT:-80}:80"
     volumes:
-      - ../../nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ${NGINX_CONFIG_PATH:-./nginx.conf}:/etc/nginx/conf.d/environment/local.conf:ro
+      - ${NGINX_CONFIG_PATH:-./nginx.conf}:/etc/nginx/conf.d/environment/current.conf:ro
     healthcheck:
       test: ["CMD", "nginx", "-t"]
       interval: 30s
@@ -73,7 +73,6 @@ services:
         condition: service_healthy
       dockmaster:
         condition: service_healthy
-    command: ["nginx", "-g", "daemon off;"]
 
 networks:
   harbormaster:
