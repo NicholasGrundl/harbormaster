@@ -48,18 +48,26 @@ dev.compose.clean: check.env
 
 
 #### Context ####
-.PHONY: contxt
+.PHONY: context
 context: context.clean context.settings
 
 .PHONY: context.settings
 context.settings:
-	repo2txt -r . -o ./context/context-settings.txt \
-	--exclude-dir context old \
-	--ignore-types \
-	--ignore-files LICENSE README.md \
-	&& python -c 'import sys; open("context/context-settings.md","wb").write(open("context/context-settings.txt","rb").read().replace(b"\0",b""))' \
-	&& rm ./context/context-settings.txt
+	echo "" > ./context/context-test.md
+	repo2txt -r ./environments/local -o ./context/context-test.txt \
+	--exclude-dir keys \
+	&& python -c 'import sys; open("context/context-test.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
+	&& rm ./context/context-test.txt
+	repo2txt -r ./environments/production -o ./context/context-test.txt \
+	--exclude-dir keys \
+	&& python -c 'import sys; open("context/context-test.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
+	&& rm ./context/context-test.txt
+	repo2txt -r . -o ./context/context-test.txt \
+	--exclude-dir context docs old environments \
+	--ignore-files LICENSE README.md .env \
+	&& python -c 'import sys; open("context/context-test.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
+	&& rm ./context/context-test.txt
 
 .PHONY: context.clean
 context.clean:
-	@if [ -f ./context/context-* ]; then rm ./context/context-*; fi
+	rm -f ./context/context-* || true
