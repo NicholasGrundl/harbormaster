@@ -152,15 +152,14 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME}-auth
     volumes:
       - ${DOCKMASTER_KEY_PATH}:/app/keys/dockmaster.key:ro
-    environment:
-      - PRIVATE_KEY_PATH=/app/keys/dockmaster.key
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/auth/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    env_file:
+      - ${DOCKMASTER_ENVFILE_PATH}
     networks:
       - harbormaster
+    ports:
+      - "8001:8001"
+    command: ["python", "-m", "uvicorn", "dockmaster.main:app", "--reload", "--host", "0.0.0.0", "--port", "8001"]
+
 
   dockyard:
     image: ${BACKEND_IMAGE}:${IMAGE_TAG:-latest}
@@ -168,18 +167,14 @@ services:
     volumes:
       - ${DOCKYARD_KEY_PATH}:/app/keys/dockyard.key:ro
       - backend_data:/app/data
-    environment:
-      - PRIVATE_KEY_PATH=/app/keys/dockyard.key
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
     networks:
       - harbormaster
+    ports:
+      - "8000:8000"
+    command: ["python", "-m", "uvicorn", "dockyard.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
     depends_on:
-      dockmaster:
-        condition: service_healthy
+      - dockmaster
+
 
   waypoint:
     image: ${FRONTEND_IMAGE}:${IMAGE_TAG:-latest}
@@ -187,40 +182,32 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - DEBUG=${DEBUG:-true}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
     networks:
       - harbormaster
+    ports:
+      - "3000:3000"
     depends_on:
-      dockyard:
-        condition: service_healthy
+      - dockmaster
+      - dockyard
 
   nginx:
-    image: nginx:1.25-alpine
+    build:
+      context: ../../nginx
     container_name: ${COMPOSE_PROJECT_NAME}-nginx
     ports:
-      - "${NGINX_PORT:-80}:80"
+      - "80:80"
     volumes:
-      - ../../nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ${NGINX_CONFIG_PATH:-./nginx.conf}:/etc/nginx/conf.d/environment/local.conf:ro
-    healthcheck:
-      test: ["CMD", "nginx", "-t"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - ${NGINX_CONFIG_PATH:-./nginx.conf}:/etc/nginx/conf.d/environment/current.conf:ro
     networks:
       - harbormaster
+    environment:
+      - NGINX_DEBUG=1
+    command: ["nginx-debug", "-g", "daemon off;"] 
+    # command: ["nginx", "-c", "/etc/nginx/nginx.conf", "-g", "daemon off;"]
     depends_on:
-      waypoint:
-        condition: service_healthy
-      dockyard:
-        condition: service_healthy
-      dockmaster:
-        condition: service_healthy
-    command: ["nginx", "-g", "daemon off;"]
+      - dockmaster
+      - dockyard
+      - waypoint
 
 networks:
   harbormaster:
@@ -239,17 +226,39 @@ server {
 
     # Frontend Routes
     location / {
-        proxy_pass http://frontend;
+        proxy_pass http://waypoint;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
     }
 
     # Backend API Routes
     location /api/ {
-        proxy_pass http://backend;
+        proxy_pass http://dockyard;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # Auth Service Routes
     location /auth/ {
-        proxy_pass http://auth;
+        proxy_pass http://dockmaster;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Add these
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
     }
 }
 [File Ends] nginx.conf
@@ -279,7 +288,7 @@ File Content Begin -->
 # HTTP Server (Redirects & Health Checks)
 server {
     listen 80;
-    server_name your-domain.com;
+    server_name ${DOMAIN};
 
     # Allow health checks over HTTP
     location /api/health {
@@ -300,20 +309,15 @@ server {
 # HTTPS Server
 server {
     listen 443 ssl http2;
-    server_name your-domain.com;
+    server_name ${DOMAIN};
 
     # SSL Configuration
-    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
     
     # SSL Settings
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
-    ssl_session_tickets off;
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
-    ssl_prefer_server_ciphers off;
-
+    
     # Frontend Routes
     location / {
         proxy_pass http://frontend;
@@ -352,8 +356,9 @@ Directory/File Tree Begins -->
 ├── TODO.md
 ├── nginx
 │   ├── Dockerfile
-│   └── conf.d
-│       └── default.conf
+│   ├── conf.d
+│   │   └── default.conf
+│   └── nginx.conf
 └── scripts
 
 <-- Directory/File Tree Ends
@@ -415,19 +420,19 @@ context: context.clean context.settings
 
 .PHONY: context.settings
 context.settings:
-	echo "" > ./context/context-test.md
+	echo "" > ./context/context-settings.md
 	repo2txt -r ./environments/local -o ./context/context-test.txt \
 	--exclude-dir keys \
-	&& python -c 'import sys; open("context/context-test.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
+	&& python -c 'import sys; open("context/context-settings.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
 	&& rm ./context/context-test.txt
 	repo2txt -r ./environments/production -o ./context/context-test.txt \
 	--exclude-dir keys \
-	&& python -c 'import sys; open("context/context-test.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
+	&& python -c 'import sys; open("context/context-settings.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
 	&& rm ./context/context-test.txt
 	repo2txt -r . -o ./context/context-test.txt \
 	--exclude-dir context docs old environments \
 	--ignore-files LICENSE README.md .env \
-	&& python -c 'import sys; open("context/context-test.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
+	&& python -c 'import sys; open("context/context-settings.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
 	&& rm ./context/context-test.txt
 
 .PHONY: context.clean
@@ -488,63 +493,74 @@ Update docs with common routines
   RUN mkdir -p /var/www/_letsencrypt \
       && mkdir -p /etc/nginx/conf.d/environment
   
-  # Copy base configuration
+  # Copy configurations
+  COPY nginx.conf /etc/nginx/nginx.conf
   COPY conf.d/default.conf /etc/nginx/conf.d/default.conf
+  # - Environment specific configuration volume mounted
   
-  # Environment configuration will be mounted as volume
-  # ## TODO: do i need these?
-  # EXPOSE 80
+  EXPOSE 80 443
   
-  # CMD ["nginx", "-g", "daemon off;"]
+  CMD ["nginx", "-g", "daemon off;"]
   [File Ends] nginx/Dockerfile
 
     [File Begins] nginx/conf.d/default.conf
-    # /nginx/conf.d/default.conf
-    events {
-        worker_connections 1024;
+    # Define upstream services
+    upstream waypoint {
+        server waypoint:3000;
     }
     
-    http {
-        include       /etc/nginx/mime.types;
-        default_type  application/octet-stream;
-    
-        # Define upstream services
-        upstream frontend {
-            server waypoint:3000;
-        }
-    
-        upstream backend {
-            server dockyard:8000;
-        }
-    
-        upstream auth {
-            server dockmaster:8001;
-        }
-    
-        # Common proxy headers
-        map $http_upgrade $connection_upgrade {
-            default upgrade;
-            ''      close;
-        }
-    
-        # Proxy configuration template
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
-    
-        # Rate limiting zones (used in production)
-        limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
-        limit_req_zone $binary_remote_addr zone=auth:10m rate=5r/s;
-    
-        # Include environment-specific configurations. 
-        # - dynamically volume mounted in docker compose
-        include /etc/nginx/conf.d/environment/*.conf;
+    upstream dockyard {
+        server dockyard:8000;
     }
+    
+    upstream dockmaster {
+        server dockmaster:8001;
+    }
+    
+    # WebSocket support
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+    
+    # Common proxy settings
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    
+    # Add debug logging
+    error_log /var/log/nginx/error.log debug;
+    
+    # Rate limiting (used in production)
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+    limit_req_zone $binary_remote_addr zone=auth:10m rate=5r/s;
     [File Ends] nginx/conf.d/default.conf
+
+  [File Begins] nginx/nginx.conf
+  # Default nginx settings
+  user nginx;
+  worker_processes auto;
+  error_log /var/log/nginx/error.log notice;
+  pid /var/run/nginx.pid;
+  
+  events {
+      worker_connections 1024;
+  }
+  
+  http {
+      include       /etc/nginx/mime.types;
+      default_type  application/octet-stream;
+  
+      # Include all configurations
+      include /etc/nginx/conf.d/*.conf;
+  
+      include /etc/nginx/conf.d/environment/*.conf;
+  }
+  [File Ends] nginx/nginx.conf
 
 
 <-- File Content Ends

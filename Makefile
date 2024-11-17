@@ -21,6 +21,7 @@ check.env:
 # Docker Compose
 .PHONY: dev.compose
 dev.compose: check.env
+	docker compose -f environments/local/docker-compose.yml build nginx
 	docker compose -f environments/local/docker-compose.yml up --pull always
 
 .PHONY: dev.compose.clean
@@ -53,19 +54,19 @@ context: context.clean context.settings
 
 .PHONY: context.settings
 context.settings:
-	echo "" > ./context/context-test.md
+	echo "" > ./context/context-settings.md
 	repo2txt -r ./environments/local -o ./context/context-test.txt \
 	--exclude-dir keys \
-	&& python -c 'import sys; open("context/context-test.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
+	&& python -c 'import sys; open("context/context-settings.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
 	&& rm ./context/context-test.txt
 	repo2txt -r ./environments/production -o ./context/context-test.txt \
 	--exclude-dir keys \
-	&& python -c 'import sys; open("context/context-test.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
+	&& python -c 'import sys; open("context/context-settings.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
 	&& rm ./context/context-test.txt
 	repo2txt -r . -o ./context/context-test.txt \
 	--exclude-dir context docs old environments \
 	--ignore-files LICENSE README.md .env \
-	&& python -c 'import sys; open("context/context-test.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
+	&& python -c 'import sys; open("context/context-settings.md","ab").write(open("context/context-test.txt","rb").read().replace(b"\0",b""))' \
 	&& rm ./context/context-test.txt
 
 .PHONY: context.clean
